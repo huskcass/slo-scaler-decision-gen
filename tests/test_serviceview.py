@@ -237,10 +237,8 @@ def test_skip_on_physical_none():
 
 
 def test_skip_on_physical_zero():
-    """replicas_ready = 0 while committed>0 means unexpected loss (crash,
-    drain lag) — all signals from zero backends are dead-air data.
-    Same skip posture as None. (0 with committed==0 is the scale-to-zero
-    steady state and evaluates; see the tests below.)"""
+    """replicas_ready = 0 means no backends — all signals from it are
+    dead-air data. Same skip posture as None."""
     v = ServiceView("ns", "svc")
     v.step(comfy_readings(), PLACEMENT, CR, physical=3, now=0.0)
     now = 120.0
@@ -306,32 +304,6 @@ def _idle_zero_readings():
         "rejection_count": ok(0.0),
         "request_count": ok(0.0),
     }
-
-
-def test_zero_physical_with_zero_committed_evaluates():
-    """Scale-to-zero steady state: committed==0 and physical==0 is NOT a
-    skip — the tick evaluates normally and holds at 0 while idle."""
-    v = ServiceView("ns", "svc")
-    t = v.step(_idle_zero_readings(), _zero_placement(), _zero_cr(),
-               physical=0, now=0.0)
-    assert t.skip is False
-    assert v.committed == 0
-    assert t.want == 0
-
-
-def test_zero_wakes_on_fire_alarm():
-    """Rejection spike against a zero fleet fires R1a (never gated) and
-    proposes 1 — the C1 zero-base corner."""
-    v = ServiceView("ns", "svc")
-    v.step(_idle_zero_readings(), _zero_placement(), _zero_cr(),
-           physical=0, now=0.0)
-    hot = _idle_zero_readings()
-    hot["rejection"] = ok(0.5)
-    hot["rejection_count"] = ok(10.0)
-    t = v.step(hot, _zero_placement(), _zero_cr(), physical=0, now=60.0)
-    assert t.skip is False
-    assert t.proposal is not None and t.proposal.rule == "r1a-fire"
-    assert t.want == 1
 
 
 def test_shed_reaches_zero_with_min_zero():

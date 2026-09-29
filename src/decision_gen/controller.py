@@ -227,13 +227,10 @@ class Controller:
                           kind=cr_kind)
             transitions.append(t)
             if t.skip:
-                # No-stats tick (physical None, or 0 with committed>0 =
-                # unexpected loss). Don't feed the service to the planner,
-                # don't commit anything against it. State (committed,
-                # clocks, comfort) stays frozen in the view until a real
-                # reading lands. physical==0 with committed==0 is the
-                # scale-to-zero steady state and is NOT skipped — it
-                # evaluates normally so demand can wake the fleet.
+                # physical = 0 or missing → no-stats tick. Don't feed the
+                # service to the planner, don't commit anything against it.
+                # State (committed, clocks, comfort) stays frozen in the
+                # view until a real reading lands.
                 continue
 
             mn, mx, pri = _bounds(spec)

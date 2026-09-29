@@ -143,13 +143,7 @@ class ServiceView:
         readings: llm — {'ttft': {kind: Reading}, 'otps': {...},
                          'rejection': Reading, ...}
                   job — {'queue_depth': Reading}
-        physical: int | None — replicas_ready. None means the exporter is
-                  absent or broken: no-stats tick, skip. 0 with committed>0
-                  is unexpected loss (crash, drain lag) — signals from zero
-                  backends are dead-air data, skip the same way. 0 with
-                  committed==0 is the scale-to-zero steady state: evaluate
-                  normally, so returning demand (queue depth, rejections)
-                  can wake the fleet instead of freezing it at zero.
+        physical: int | None — replicas_ready; None or 0 = no-stats, skip.
         CR missing maximumDeployment → skip: user opted out of autoscale.
         kind: "llm" | "job" — which verdict algebra to apply. The
               controller knows this from which watcher produced the CR;
@@ -182,13 +176,7 @@ class ServiceView:
         # which includes whole classes of workloads that never had the
         # LLM exporter (jobs being the first example).
         self._ensure_seeded(cr_spec, placement, now)
-        # No-stats guard. physical=None means the exporter is absent or
-        # broken — nothing to decide on. physical==0 is only dead air when
-        # the ledger says pods should exist (committed>0: crash, drain lag);
-        # when committed==0 the fleet is intentionally at zero and the tick
-        # must evaluate normally — otherwise a scaled-to-zero service could
-        # never observe returning demand and would stay at zero forever.
-        if physical is None or (physical == 0 and self.committed != 0):
+        if physical is None or physical == 0:
             empty_verdicts = {"queue": {}} if kind == "job" else {"ttft": {}, "otps": {}}
             return Transition(
                 ns=self.ns, service=self.service,

@@ -253,9 +253,7 @@ class TestJobView:
         assert t.want == 3
 
     def test_physical_zero_skips_service_tick(self, job_cr_spec):
-        """physical=0 with committed>0 = unexpected loss: no-stats tick,
-        skipped, state frozen, not fed to planner. (0 with committed==0
-        is the scale-to-zero steady state and evaluates.)"""
+        """physical=0 = no-stats tick: skipped, state frozen, not fed to planner."""
         view = ServiceView("ns", "svc")
         view.commit(2, now=0, cause="boot-seed")
         readings = {"queue_depth": Reading(50, "ok")}
@@ -273,25 +271,6 @@ class TestJobView:
         assert t.skip is True
         assert "hold-no-physical-data" in t.hold_reason
         assert view.committed == 2
-
-    def test_job_wakes_from_zero_on_queue_depth(self, job_cr_spec):
-        """Scale-to-zero steady state for jobs: committed==0 and
-        physical==0 evaluates — a queue spike past the up-cooldown steps
-        to 1 instead of freezing at zero."""
-        cr = dict(job_cr_spec)
-        cr["minimumDeployment"] = {"type": "replica", "value": 0}
-        view = ServiceView("ns", "svc")
-        p = _placement(spec_replicas=0)
-        t = view.step({"queue_depth": Reading(0, "ok")}, p, cr,
-                      physical=0, now=0, kind="job")
-        assert t.skip is False
-        assert view.committed == 0
-        assert t.want == 0
-        t = view.step({"queue_depth": Reading(50, "ok")}, p, cr,
-                      physical=0, now=UP_COOLDOWN_S + 1, kind="job")
-        assert t.skip is False
-        assert t.proposal is not None and t.proposal.rule == "rjob-step-up"
-        assert t.want == 1
 
     def test_shed_fires_after_full_comfort_streak(self, job_cr_spec):
         view = ServiceView("ns", "svc")
