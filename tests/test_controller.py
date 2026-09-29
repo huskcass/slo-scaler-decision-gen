@@ -206,6 +206,57 @@ def test_skip_on_first_tick_still_serves_seeded_value(
     assert _decisions(ctl) == {"svc": 2}    # unchanged; seed held
 
 
+def test_min_max_zero_serves_zero_with_200(
+    fake_slo, fake_k8s, fake_signals, clock,
+):
+    """Acceptance: with minimumDeployment and maximumDeployment both 0,
+    /decisions answers HTTP 200 with replicas.active == 0 — never a
+    non-200 status and never a missing decision row."""
+    import json
+    import urllib.request
+    from decision_gen import server as server_mod
+
+    cr = {
+        "serviceId": "svc",
+        "priority": 5,
+        "minimumDeployment": {"type": "replica", "value": 0},
+        "maximumDeployment": {"type": "replica", "value": 0},
+        "ttft": {"default": {"metrics": [{"type": "p80", "threshold": 20.0}]}},
+        "otps": {"default": {"metrics": [{"type": "p80", "threshold": 30.0}]}},
+    }
+    zero_placement = Placement(
+        "ns", "svc", "deployment", "p", 8, "svc", spec_replicas=0,
+    )
+    _boot(fake_k8s, fake_signals, placement=zero_placement, physical=0)
+    ctl = _mk_ctl(fake_slo, fake_k8s, fake_signals, clock, cr)
+    ctl.tick()
+    assert _decisions(ctl) == {"svc": 0}
+
+    import socket, threading
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    httpd = server_mod.ThreadingHTTPServer(
+        ("127.0.0.1", port),
+        server_mod.make_handler(ctl.snapshot, ctl.ready),
+    )
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/decisions?serviceId=svc", timeout=5
+        ) as resp:
+            assert resp.status == 200
+            body = json.loads(resp.read())
+        assert body["decisions"] == [
+            {"namespace": "ns", "serviceId": "svc",
+             "replicas": {"active": 0}}
+        ]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_warns_when_pool_cannot_fit_all_mins(
     fake_slo, fake_k8s, fake_signals, clock, cr_spec, caplog,
 ):

@@ -281,6 +281,46 @@ def test_skip_does_not_reset_comfort_streak():
     assert t.comfort_s == 180
 
 
+# ---------- scale-to-zero: physical=0 with committed=0 evaluates ----------
+
+def _zero_cr():
+    cr = dict(CR)
+    cr["minimumDeployment"] = {"type": "replica", "value": 0}
+    return cr
+
+
+def _zero_placement(spec_replicas=0):
+    return Placement("ns", "svc", "deployment", "p", 8, "svc",
+                     spec_replicas=spec_replicas)
+
+
+def _idle_zero_readings():
+    """No backends, no traffic: SLO histograms read no_traffic (deep
+    comfort, not missing), rejection quiet."""
+    return {
+        "ttft": {"p80": notraffic()},
+        "otps": {"p80": notraffic()},
+        "rejection": ok(0.0002),
+        "rejection_count": ok(0.0),
+        "request_count": ok(0.0),
+    }
+
+
+def test_shed_reaches_zero_with_min_zero():
+    """With minimumDeployment.value=0 the comfort shed walks the last
+    step 1→0 instead of flooring at 1."""
+    v = ServiceView("ns", "svc")
+    p = _zero_placement(spec_replicas=1)
+    v.step(_idle_zero_readings(), p, _zero_cr(), physical=1, now=0.0)
+    assert v.committed == 1
+    t = v.step(_idle_zero_readings(), p, _zero_cr(), physical=1,
+               now=DOWN_COOLDOWN_S + COMFORT_SUSTAIN_S + 1)
+    assert t.skip is False
+    assert t.proposal is not None and t.proposal.rule == "r1c-shed"
+    assert t.est == 0
+    assert t.want == 0
+
+
 # ---------- CR max shrink (C4) ----------
 
 def test_max_shrink_compresses_this_tick():
